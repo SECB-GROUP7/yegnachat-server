@@ -8,6 +8,7 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 
 public class UserDao {
 
@@ -61,18 +62,73 @@ public class UserDao {
         return rs.next() ? extractUser(rs) : null;
     }
 
-    public List<User> listAllExcept(int userId) throws SQLException {
-        String sql = "SELECT * FROM users WHERE id <> ?";
-        PreparedStatement ps = conn.prepareStatement(sql);
-        ps.setInt(1, userId);
+    //    public List<User> listAllExcept(int userId) throws SQLException {
+//        String sql = "SELECT * FROM users WHERE id <> ?";
+//        PreparedStatement ps = conn.prepareStatement(sql);
+//        ps.setInt(1, userId);
+//
+//        ResultSet rs = ps.executeQuery();
+//        List<User> users = new ArrayList<>();
+//
+//        while (rs.next()) {
+//            users.add(extractUser(rs));
+//        }
+//        return users;
+//    }
+    public List<Map<String, Object>> listGroupsForUser(int userId) throws SQLException {
+        List<Map<String, Object>> groups = new ArrayList<>();
 
-        ResultSet rs = ps.executeQuery();
+        String sql = """
+                    SELECT g.id, g.name, g.avatar_url, g.about
+                    FROM chat_groups g
+                    JOIN group_members gm ON g.id = gm.group_id
+                    WHERE gm.user_id = ?
+                """;
+
+        try (PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setInt(1, userId);
+            ResultSet rs = ps.executeQuery();
+
+            while (rs.next()) {
+                groups.add(Map.of(
+                        "id", rs.getInt("id"),
+                        "name", rs.getString("name"),
+                        "avatar_url", rs.getString("avatar_url") != null ? rs.getString("avatar_url") : "",
+                        "about", rs.getString("about") != null ? rs.getString("about") : ""
+                ));
+            }
+        }
+        return groups;
+    }
+
+    public List<User> listUsersWithMessages(int userId) throws SQLException {
         List<User> users = new ArrayList<>();
+        String sql = """
+                    SELECT DISTINCT u.*
+                    FROM users u
+                    JOIN messages m
+                      ON (m.sender_id = ? AND m.receiver_id = u.id)
+                      OR (m.receiver_id = ? AND m.sender_id = u.id)
+                    WHERE u.id != ?
+                """;
 
-        while (rs.next()) {
-            users.add(extractUser(rs));
+        try (PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setInt(1, userId);
+            ps.setInt(2, userId);
+            ps.setInt(3, userId);
+
+            ResultSet rs = ps.executeQuery();
+            while (rs.next()) {
+                User u = new User();
+                u.setId(rs.getInt("id"));
+                u.setUsername(rs.getString("username"));
+                u.setAvatarUrl(rs.getString("avatar_url"));
+                u.setBio(rs.getString("bio"));
+                users.add(u);
+            }
         }
         return users;
     }
+
 
 }

@@ -6,8 +6,10 @@ import com.yegnachat.server.DatabaseService;
 import com.yegnachat.server.util.PasswordUtil;
 
 import java.sql.Connection;
+import java.sql.PreparedStatement;
 import java.sql.SQLException;
 import java.util.List;
+import java.util.Map;
 
 public class UserService {
 
@@ -29,11 +31,24 @@ public class UserService {
         }
     }
 
-    public List<User> listAllUsersExcept(int userId) throws SQLException {
+//    public List<User> listAllUsersExcept(int userId) throws SQLException {
+//        try (Connection conn = db.getConnection()) {
+//            return new UserDao(conn).listAllExcept(userId);
+//        }
+//    }
+
+    public List<User> listUsersWithMessages(int userId) throws SQLException {
         try (Connection conn = db.getConnection()) {
-            return new UserDao(conn).listAllExcept(userId);
+            return new UserDao(conn).listUsersWithMessages(userId);
         }
     }
+    public List<Map<String, Object>> listGroupsForUser(int userId) throws SQLException {
+        try (Connection conn = db.getConnection()) {
+            return new UserDao(conn).listGroupsForUser(userId);
+        }
+    }
+
+
     public boolean createUser(String username, String password, String avatarUrl, String bio) throws SQLException {
         try (Connection conn = db.getConnection()) {
             UserDao dao = new UserDao(conn);
@@ -51,4 +66,14 @@ public class UserService {
             return dao.createUser(user);
         }
     }
+    public boolean updatePreferredLanguage(int userId, String languageCode) throws SQLException {
+        String sql = "UPDATE users SET preferred_language_code = ? WHERE id = ?";
+        try (Connection conn = db.getConnection();
+             PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setString(1, languageCode);
+            ps.setInt(2, userId);
+            return ps.executeUpdate() > 0;
+        }
+    }
+
 }

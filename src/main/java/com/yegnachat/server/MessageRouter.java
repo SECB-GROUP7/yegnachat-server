@@ -1,6 +1,7 @@
 package com.yegnachat.server;
 
 import com.google.gson.Gson;
+import com.yegnachat.server.chat.GroupMessage;
 import com.yegnachat.server.protocol.JsonMessage;
 import com.yegnachat.server.auth.AuthService;
 import com.yegnachat.server.auth.SessionInfo;
@@ -48,9 +49,11 @@ public class MessageRouter {
                     yield gson.toJson(new JsonMessage("login_response", Map.of(
                             "status", "ok",
                             "token", s.getToken(),
-                            "user_id", s.getUserId()
+                            "user_id", s.getUserId(),
+                            "preferred_language_code", s.getPreferredLanguageCode()
                     )));
                 }
+
 
                 case "send_message" -> {
                     if (sender.getSession() == null) {
@@ -80,7 +83,7 @@ public class MessageRouter {
                         chatService.saveGroupMessage(senderId, groupId, content);
 
                         List<Integer> members = chatService.getGroupMembers(groupId);
-                        ClientHandler.sendToUsers(members, json);
+                        ClientHandler.sendToUsers(members, json, senderId);
                     }
 
                     yield null;
@@ -96,8 +99,9 @@ public class MessageRouter {
 
                     if ("private".equals(type)) {
                         int otherUserId = Integer.parseInt(p.get("user_id").toString());
-                        List<String> history = chatService.fetchPrivateHistory(sender.getSession().getUserId(), otherUserId);
-
+                        List<Map<String, String>> history = chatService.fetchPrivateHistory(
+                                sender.getSession().getUserId(), otherUserId
+                        );
                         yield gson.toJson(new JsonMessage("fetch_history_response", Map.of(
                                 "status", "ok",
                                 "chat_type", "private",
@@ -105,7 +109,22 @@ public class MessageRouter {
                         )));
                     } else if ("group".equals(type)) {
                         int groupId = Integer.parseInt(p.get("group_id").toString());
-                        List<String> history = chatService.fetchGroupHistory(groupId);
+
+                        List<GroupMessage> messages = chatService.fetchGroupHistory(groupId);
+                        List<Map<String, String>> history = new ArrayList<>();
+
+                        for (GroupMessage gm : messages) {
+                            User senderUser = userService.getById(gm.senderId());
+                            String senderName = senderUser != null
+                                    ? senderUser.getUsername()
+                                    : "Unknown";
+
+                            history.add(Map.of(
+                                    "sender", senderName,
+                                    "content", gm.content()
+                            ));
+                        }
+
 
                         yield gson.toJson(new JsonMessage("fetch_history_response", Map.of(
                                 "status", "ok",
@@ -113,9 +132,11 @@ public class MessageRouter {
                                 "messages", history
                         )));
                     } else {
-                        yield gson.toJson(new JsonMessage("error", "Unknown chat type"));
+                        // handle unknown chat_type
+                        yield gson.toJson(new JsonMessage("error", "Unknown chat type: " + type));
                     }
                 }
+
 
                 case "get_user" -> {
                     if (sender.getSession() == null) {
@@ -142,25 +163,37 @@ public class MessageRouter {
                 }
 
                 case "list_users" -> {
+
                     if (sender.getSession() == null) {
                         yield gson.toJson(new JsonMessage("error", "Not authenticated"));
                     }
 
-                    List<User> users = userService.listAllUsersExcept(sender.getSession().getUserId());
+                    try {
+                        int currentUserId = sender.getSession().getUserId();
 
-                    List<Map<String, Object>> result = users.stream()
-                            .map(u -> Map.<String, Object>of(
-                                    "id", u.getId(),
-                                    "username", u.getUsername(),
-                                    "avatar_url", u.getAvatarUrl()
-                            ))
-                            .toList();
+                        // Users messages ONLY
+                        List<User> users = userService.listUsersWithMessages(currentUserId);
+                        List<Map<String, Object>> userList = users.stream()
+                                .map(u -> Map.<String, Object>of(
+                                        "id", u.getId(),
+                                        "username", u.getUsername(),
+                                        "avatar_url", u.getAvatarUrl() != null ? u.getAvatarUrl() : ""
+                                ))
+                                .toList();
 
-                    yield gson.toJson(new JsonMessage("list_users_response", Map.of(
-                            "status", "ok",
-                            "users", result
-                    )));
+                        // 2️⃣ Groups the user belongs to
+                        List<Map<String, Object>> groupList = userService.listGroupsForUser(currentUserId);
+
+                        yield gson.toJson(new JsonMessage("list_users_response", Map.of(
+                                "status", "ok",
+                                "users", userList,
+                                "groups", groupList
+                        )));
+                    } catch (Exception e) {
+                        yield gson.toJson(new JsonMessage("error", "Exception: " + e.getMessage()));
+                    }
                 }
+
 
                 case "signup" -> {
                     Map<String, Object> p = (Map<String, Object>) msg.getPayload();
@@ -360,6 +393,53 @@ public class MessageRouter {
                             )
                     ));
                 }
+                case "set_preferred_language" -> {
+                    if (sender.getSession() == null) {
+                        yield gson.toJson(new JsonMessage("error", "Not authenticated"));
+                    }
+
+                    Map<?, ?> p = (Map<?, ?>) msg.getPayload();
+                    String languageCode = p.get("language_code").toString(); // e.g., "en", "am", "fr"
+                    int userId = sender.getSession().getUserId();
+
+                    try {
+                        boolean updated = userService.updatePreferredLanguage(userId, languageCode);
+                        if (updated) {
+                            // Update the session too
+                            sender.getSession().setPreferredLanguageCode(languageCode);
+
+                            yield gson.toJson(new JsonMessage("set_preferred_language_response", Map.of(
+                                    "status", "ok",
+                                    "preferred_language_code", languageCode
+                            )));
+                        } else {
+                            yield gson.toJson(new JsonMessage("set_preferred_language_response", Map.of(
+                                    "status", "error",
+                                    "message", "Failed to update language"
+                            )));
+                        }
+                    } catch (SQLException e) {
+                        yield gson.toJson(new JsonMessage("set_preferred_language_response", Map.of(
+                                "status", "error",
+                                "message", "Database error: " + e.getMessage()
+                        )));
+                    }
+                }
+                case "get_preferred_language" -> {
+                    if (sender.getSession() == null) {
+                        yield gson.toJson(new JsonMessage("error", "Not authenticated"));
+                    }
+
+                    // Get the language from the session
+                    String languageCode = sender.getSession().getPreferredLanguageCode();
+
+                    yield gson.toJson(new JsonMessage("get_preferred_language_response", Map.of(
+                            "status", "ok",
+                            "preferred_language_code", languageCode
+                    )));
+                }
+
+
 
 
                 default -> gson.toJson(new JsonMessage("error", "Unknown message type"));

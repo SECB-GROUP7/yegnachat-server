@@ -14,7 +14,11 @@ public class AuthService {
     }
 
     public SessionInfo login(String username, String password) throws SQLException {
-        String sql = "SELECT id, password_hash FROM users WHERE username = ?";
+        String sql = """
+        SELECT id, password_hash, preferred_language_code
+        FROM users
+        WHERE username = ?
+    """;
 
         try (Connection conn = db.getConnection();
              PreparedStatement ps = conn.prepareStatement(sql)) {
@@ -22,14 +26,16 @@ public class AuthService {
             ps.setString(1, username);
             ResultSet rs = ps.executeQuery();
 
-            if (!rs.next()) {
-                return null;
-            }
+            if (!rs.next()) return null;
 
             if (!PasswordUtil.checkPassword(password, rs.getString("password_hash")))
                 return null;
 
-            return SessionManager.createSession(rs.getInt("id"));
+            return SessionManager.createSession(
+                    rs.getInt("id"),
+                    rs.getString("preferred_language_code")
+            );
         }
     }
+
 }

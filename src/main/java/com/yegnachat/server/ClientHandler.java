@@ -62,6 +62,7 @@ public class ClientHandler implements Runnable {
             close();
         }
     }
+
     // For online user only
     public static boolean sendToUser(int userId, String json) {
         ClientHandler client = ONLINE_USERS.get(userId);
@@ -71,10 +72,13 @@ public class ClientHandler implements Runnable {
         }
         return false;
     }
+
     // For online users only
-    public static void sendToUsers(List<Integer> userIds, String json) {
+    public static void sendToUsers(List<Integer> userIds, String json, int senderId) {
         for (int id : userIds) {
-            sendToUser(id, json);
+            if (id != senderId) {
+                sendToUser(id, json);
+            }
         }
     }
 
@@ -90,6 +94,7 @@ public class ClientHandler implements Runnable {
                 ONLINE_USERS.remove(session.getUserId());
             }
             socket.close();
-        } catch (IOException ignored) {}
+        } catch (IOException ignored) {
+        }
     }
 }

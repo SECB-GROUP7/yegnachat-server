@@ -7,12 +7,16 @@ import java.util.concurrent.ConcurrentHashMap;
 public class SessionManager {
     private static final Map<String, SessionInfo> sessions = new ConcurrentHashMap<>();
 
-    public static SessionInfo createSession(int userId) {
+    public static SessionInfo createSession(
+            int userId,
+            String preferredLanguageCode
+    ) {
         String token = UUID.randomUUID().toString();
-        SessionInfo info = new SessionInfo(userId, token);
+        SessionInfo info = new SessionInfo(userId, token, preferredLanguageCode);
         sessions.put(token, info);
         return info;
     }
+
 
     public static SessionInfo get(String token) {
         return sessions.get(token);

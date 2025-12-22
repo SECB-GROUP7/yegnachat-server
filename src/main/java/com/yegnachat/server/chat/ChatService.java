@@ -4,6 +4,7 @@ import com.yegnachat.server.DatabaseService;
 
 import java.sql.*;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -17,9 +18,9 @@ public class ChatService {
 
     public void savePrivateMessage(int senderId, int receiverId, String content) throws SQLException {
         String sql = """
-            INSERT INTO messages (sender_id, receiver_id, content)
-            VALUES (?, ?, ?)
-        """;
+                    INSERT INTO messages (sender_id, receiver_id, content)
+                    VALUES (?, ?, ?)
+                """;
 
         try (Connection conn = db.getConnection();
              PreparedStatement ps = conn.prepareStatement(sql)) {
@@ -31,16 +32,16 @@ public class ChatService {
         }
     }
 
-    public List<String> fetchPrivateHistory(int userA, int userB) throws SQLException {
+    public List<Map<String, String>> fetchPrivateHistory(int userA, int userB) throws SQLException {
         String sql = """
-            SELECT sender_id, content, created_at
-            FROM messages
-            WHERE (sender_id=? AND receiver_id=?)
-               OR (sender_id=? AND receiver_id=?)
-            ORDER BY created_at
-        """;
+                    SELECT sender_id, content, created_at
+                    FROM messages
+                    WHERE (sender_id=? AND receiver_id=?)
+                       OR (sender_id=? AND receiver_id=?)
+                    ORDER BY created_at
+                """;
 
-        List<String> messages = new ArrayList<>();
+        List<Map<String, String>> messages = new ArrayList<>();
         try (Connection conn = db.getConnection();
              PreparedStatement ps = conn.prepareStatement(sql)) {
 
@@ -51,17 +52,41 @@ public class ChatService {
 
             ResultSet rs = ps.executeQuery();
             while (rs.next()) {
-                messages.add(rs.getInt("sender_id") + ":" + rs.getString("content"));
+                String sender = rs.getInt("sender_id") == userA ? "Me" : "Friend";
+                String content = rs.getString("content");
+                messages.add(Map.of("sender", sender, "content", content));
             }
         }
         return messages;
     }
 
+//    public Map<Integer, String> fetchGroupHistoryWithIds(int groupId) throws SQLException {
+//        String sql = """
+//        SELECT sender_id, content
+//        FROM group_messages
+//        WHERE group_id=?
+//        ORDER BY created_at
+//    """;
+//
+//        Map<Integer, String> messages = new LinkedHashMap<>();
+//        try (Connection conn = db.getConnection();
+//             PreparedStatement ps = conn.prepareStatement(sql)) {
+//
+//            ps.setInt(1, groupId);
+//            ResultSet rs = ps.executeQuery();
+//
+//            while (rs.next()) {
+//                messages.put(rs.getInt("sender_id"), rs.getString("content"));
+//            }
+//        }
+//        return messages;
+//    }
+
     public void saveGroupMessage(int senderId, int groupId, String content) throws SQLException {
         String sql = """
-            INSERT INTO group_messages (group_id, sender_id, content)
-            VALUES (?, ?, ?)
-        """;
+                    INSERT INTO group_messages (group_id, sender_id, content)
+                    VALUES (?, ?, ?)
+                """;
 
         try (Connection conn = db.getConnection();
              PreparedStatement ps = conn.prepareStatement(sql)) {
@@ -73,32 +98,41 @@ public class ChatService {
         }
     }
 
-    public List<String> fetchGroupHistory(int groupId) throws SQLException {
+    public List<GroupMessage> fetchGroupHistory(int groupId) throws SQLException {
         String sql = """
-            SELECT sender_id, content, created_at
-            FROM group_messages
-            WHERE group_id=?
-            ORDER BY created_at
-        """;
+        SELECT id, group_id, sender_id, content, created_at
+        FROM group_messages
+        WHERE group_id = ?
+        ORDER BY created_at
+    """;
 
-        List<String> messages = new ArrayList<>();
+        List<GroupMessage> messages = new ArrayList<>();
+
         try (Connection conn = db.getConnection();
              PreparedStatement ps = conn.prepareStatement(sql)) {
 
             ps.setInt(1, groupId);
-
             ResultSet rs = ps.executeQuery();
+
             while (rs.next()) {
-                messages.add(rs.getInt("sender_id") + ":" + rs.getString("content"));
+                messages.add(new GroupMessage(
+                        rs.getInt("id"),
+                        rs.getInt("group_id"),
+                        rs.getInt("sender_id"),
+                        rs.getString("content"),
+                        rs.getTimestamp("created_at")
+                ));
             }
         }
         return messages;
     }
 
+
+
     public List<Integer> getGroupMembers(int groupId) throws SQLException {
         String sql = """
-            SELECT user_id FROM group_members WHERE group_id=?
-        """;
+                    SELECT user_id FROM group_members WHERE group_id=?
+                """;
 
         List<Integer> members = new ArrayList<>();
         try (Connection conn = db.getConnection();
@@ -112,6 +146,7 @@ public class ChatService {
         }
         return members;
     }
+
     public int createGroup(String name, String about, String avatarUrl, int creatorId) throws SQLException {
         String sql = "INSERT INTO chat_groups (name, about, avatar_url, created_by) VALUES (?, ?, ?, ?)";
         try (Connection conn = db.getConnection();
@@ -133,6 +168,7 @@ public class ChatService {
             }
         }
     }
+
     public void addUsersToGroup(int groupId, List<Integer> userIds) throws SQLException {
         String sql = "INSERT INTO group_members (group_id, user_id, role) VALUES (?, ?, ?)";
 
@@ -165,6 +201,7 @@ public class ChatService {
             ps.executeUpdate();
         }
     }
+
     public boolean isUserInGroup(int groupId, int userId) throws SQLException {
         String sql = "SELECT COUNT(*) FROM group_members WHERE group_id = ? AND user_id = ?";
         try (Connection conn = db.getConnection();
@@ -179,14 +216,15 @@ public class ChatService {
             return false;
         }
     }
+
     // List groups a user belongs to
     public List<Map<String, Object>> listGroupsForUser(int userId) throws SQLException {
         String sql = """
-        SELECT g.id, g.name, g.about, g.avatar_url
-        FROM chat_groups g
-        JOIN group_members gm ON g.id = gm.group_id
-        WHERE gm.user_id = ?
-    """;
+                    SELECT g.id, g.name, g.about, g.avatar_url
+                    FROM chat_groups g
+                    JOIN group_members gm ON g.id = gm.group_id
+                    WHERE gm.user_id = ?
+                """;
 
         List<Map<String, Object>> groups = new ArrayList<>();
 
@@ -207,6 +245,7 @@ public class ChatService {
         }
         return groups;
     }
+
 
     // Leave group
     public boolean leaveGroup(int groupId, int userId) throws SQLException {
