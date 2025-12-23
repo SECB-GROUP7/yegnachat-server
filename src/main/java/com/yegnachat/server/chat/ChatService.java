@@ -1,6 +1,8 @@
 package com.yegnachat.server.chat;
 
 import com.yegnachat.server.DatabaseService;
+import com.yegnachat.server.user.User;
+import com.yegnachat.server.user.UserService;
 
 import java.sql.*;
 import java.util.ArrayList;
@@ -32,16 +34,22 @@ public class ChatService {
         }
     }
 
-    public List<Map<String, String>> fetchPrivateHistory(int userA, int userB) throws SQLException {
-        String sql = """
-                    SELECT sender_id, content, created_at
-                    FROM messages
-                    WHERE (sender_id=? AND receiver_id=?)
-                       OR (sender_id=? AND receiver_id=?)
-                    ORDER BY created_at
-                """;
+    public List<Map<String, Object>> fetchPrivateHistory(
+            int userA,
+            int userB,
+            UserService userService
+    ) throws SQLException {
 
-        List<Map<String, String>> messages = new ArrayList<>();
+        String sql = """
+        SELECT sender_id, content
+        FROM messages
+        WHERE (sender_id=? AND receiver_id=?)
+           OR (sender_id=? AND receiver_id=?)
+        ORDER BY created_at
+    """;
+
+        List<Map<String, Object>> messages = new ArrayList<>();
+
         try (Connection conn = db.getConnection();
              PreparedStatement ps = conn.prepareStatement(sql)) {
 
@@ -52,35 +60,21 @@ public class ChatService {
 
             ResultSet rs = ps.executeQuery();
             while (rs.next()) {
-                String sender = rs.getInt("sender_id") == userA ? "Me" : "Friend";
-                String content = rs.getString("content");
-                messages.add(Map.of("sender", sender, "content", content));
+
+                int senderId = rs.getInt("sender_id");
+                User u = userService.getById(senderId);
+
+                messages.add(Map.of(
+                        "sender_id", senderId,
+                        "sender_username", u != null ? u.getUsername() : "Unknown",
+                        "avatar_url", u != null && u.getAvatarUrl() != null ? u.getAvatarUrl() : "",
+                        "content", rs.getString("content")
+                ));
             }
         }
         return messages;
     }
 
-//    public Map<Integer, String> fetchGroupHistoryWithIds(int groupId) throws SQLException {
-//        String sql = """
-//        SELECT sender_id, content
-//        FROM group_messages
-//        WHERE group_id=?
-//        ORDER BY created_at
-//    """;
-//
-//        Map<Integer, String> messages = new LinkedHashMap<>();
-//        try (Connection conn = db.getConnection();
-//             PreparedStatement ps = conn.prepareStatement(sql)) {
-//
-//            ps.setInt(1, groupId);
-//            ResultSet rs = ps.executeQuery();
-//
-//            while (rs.next()) {
-//                messages.put(rs.getInt("sender_id"), rs.getString("content"));
-//            }
-//        }
-//        return messages;
-//    }
 
     public void saveGroupMessage(int senderId, int groupId, String content) throws SQLException {
         String sql = """

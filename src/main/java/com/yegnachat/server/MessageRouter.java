@@ -11,6 +11,7 @@ import com.yegnachat.server.user.User;
 
 import java.sql.SQLException;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -99,9 +100,13 @@ public class MessageRouter {
 
                     if ("private".equals(type)) {
                         int otherUserId = Integer.parseInt(p.get("user_id").toString());
-                        List<Map<String, String>> history = chatService.fetchPrivateHistory(
-                                sender.getSession().getUserId(), otherUserId
-                        );
+                        List<Map<String, Object>> history =
+                                chatService.fetchPrivateHistory(
+                                        sender.getSession().getUserId(),
+                                        otherUserId,
+                                        userService
+                                );
+
                         yield gson.toJson(new JsonMessage("fetch_history_response", Map.of(
                                 "status", "ok",
                                 "chat_type", "private",
@@ -111,18 +116,19 @@ public class MessageRouter {
                         int groupId = Integer.parseInt(p.get("group_id").toString());
 
                         List<GroupMessage> messages = chatService.fetchGroupHistory(groupId);
-                        List<Map<String, String>> history = new ArrayList<>();
+                        List<Map<String, Object>> history = new ArrayList<>();
 
                         for (GroupMessage gm : messages) {
                             User senderUser = userService.getById(gm.senderId());
-                            String senderName = senderUser != null
-                                    ? senderUser.getUsername()
-                                    : "Unknown";
+                            String senderName = senderUser != null ? senderUser.getUsername() : "Unknown";
 
-                            history.add(Map.of(
-                                    "sender", senderName,
-                                    "content", gm.content()
-                            ));
+                            Map<String, Object> msgMap = new LinkedHashMap<>();
+                            msgMap.put("sender_id", gm.senderId());
+                            msgMap.put("sender_username", senderName);
+                            msgMap.put("avatar_url", senderUser != null ? senderUser.getAvatarUrl() : "");
+                            msgMap.put("content", gm.content());
+
+                            history.add(msgMap);
                         }
 
 
@@ -438,8 +444,6 @@ public class MessageRouter {
                             "preferred_language_code", languageCode
                     )));
                 }
-
-
 
 
                 default -> gson.toJson(new JsonMessage("error", "Unknown message type"));
