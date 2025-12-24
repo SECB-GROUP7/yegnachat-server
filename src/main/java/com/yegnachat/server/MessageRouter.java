@@ -533,9 +533,13 @@ public class MessageRouter {
                             )
                     ));
                 }
-
-
-
+                case "logout" -> {
+                    sender.clearSession();
+                    sender.close(); // terminates the connection
+                    yield gson.toJson(new JsonMessage("logout_response", Map.of(
+                            "status", "ok"
+                    )));
+                }
 
                 default -> gson.toJson(new JsonMessage("error", "Unknown message type"));
             };

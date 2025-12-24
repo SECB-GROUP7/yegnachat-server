@@ -26,12 +26,27 @@ public class ClientHandler implements Runnable {
         this.writer = new BufferedWriter(new OutputStreamWriter(socket.getOutputStream()));
     }
 
-    public void setSession(SessionInfo session) {
-        this.session = session;
-        if (session != null) {
-            ONLINE_USERS.put(session.getUserId(), this);
+    public synchronized void setSession(SessionInfo newSession) {
+        // Remove old session mapping if exists
+        if (this.session != null) {
+            ONLINE_USERS.remove(this.session.getUserId());
+        }
+
+        this.session = newSession;
+
+        if (newSession != null) {
+            ONLINE_USERS.put(newSession.getUserId(), this);
         }
     }
+
+    // Add a helper to clear session (for logout)
+    public synchronized void clearSession() {
+        if (this.session != null) {
+            ONLINE_USERS.remove(this.session.getUserId());
+            this.session = null;
+        }
+    }
+
 
     public SessionInfo getSession() {
         return session;
@@ -88,7 +103,7 @@ public class ClientHandler implements Runnable {
         }
     }
 
-    private void close() {
+    public void close() {
         try {
             if (session != null) {
                 ONLINE_USERS.remove(session.getUserId());
