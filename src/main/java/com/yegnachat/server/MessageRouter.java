@@ -149,24 +149,30 @@ public class MessageRouter {
                         yield gson.toJson(new JsonMessage("error", "Not authenticated"));
                     }
 
-                    Map<?, ?> p = (Map<?, ?>) msg.getPayload();
-                    int userId = Integer.parseInt(p.get("user_id").toString());
+                    int userId = sender.getSession().getUserId(); // ✅ SESSION ONLY
                     User user = userService.getById(userId);
 
                     if (user == null) {
-                        yield gson.toJson(new JsonMessage("get_user_response", Map.of("status", "error")));
+                        yield gson.toJson(new JsonMessage(
+                                "get_user_response",
+                                Map.of("status", "error", "message", "User not found")
+                        ));
                     }
 
-                    yield gson.toJson(new JsonMessage("get_user_response", Map.of(
-                            "status", "ok",
-                            "user", Map.of(
-                                    "id", user.getId(),
-                                    "username", user.getUsername(),
-                                    "avatar_url", user.getAvatarUrl(),
-                                    "bio", user.getBio()
+                    yield gson.toJson(new JsonMessage(
+                            "get_user_response",
+                            Map.of(
+                                    "status", "ok",
+                                    "user", Map.of(
+                                            "id", user.getId(),
+                                            "username", user.getUsername(),
+                                            "avatar_url", user.getAvatarUrl() != null ? user.getAvatarUrl() : "",
+                                            "bio", user.getBio() != null ? user.getBio() : ""
+                                    )
                             )
-                    )));
+                    ));
                 }
+
 
                 case "list_users" -> {
 
@@ -444,6 +450,91 @@ public class MessageRouter {
                             "preferred_language_code", languageCode
                     )));
                 }
+                case "set_password" -> {
+                    if (sender.getSession() == null) {
+                        yield gson.toJson(new JsonMessage("error", "Not authenticated"));
+                    }
+
+                    Map<?, ?> p = (Map<?, ?>) msg.getPayload();
+                    String oldPassword = p.get("old_password").toString();
+                    String newPassword = p.get("new_password").toString();
+
+                    int userId = sender.getSession().getUserId();
+
+                    boolean ok = userService.changePassword(userId, oldPassword, newPassword);
+
+                    if (ok) {
+                        yield gson.toJson(new JsonMessage(
+                                "set_password_response",
+                                Map.of("status", "ok")
+                        ));
+                    } else {
+                        yield gson.toJson(new JsonMessage(
+                                "set_password_response",
+                                Map.of(
+                                        "status", "error",
+                                        "message", "Old password incorrect"
+                                )
+                        ));
+                    }
+                }
+                case "set_bio" -> {
+                    if (sender.getSession() == null) {
+                        yield gson.toJson(new JsonMessage("error", "Not authenticated"));
+                    }
+
+                    Map<?, ?> p = (Map<?, ?>) msg.getPayload();
+                    String bio = p.get("bio").toString();
+
+                    int userId = sender.getSession().getUserId();
+
+                    boolean updated = userService.updateBio(userId, bio);
+
+                    yield gson.toJson(new JsonMessage(
+                            "set_bio_response",
+                            Map.of(
+                                    "status", updated ? "ok" : "error"
+                            )
+                    ));
+                }
+
+                case "search_users" -> {
+                    if (sender.getSession() == null) {
+                        yield gson.toJson(new JsonMessage("error", "Not authenticated"));
+                    }
+
+                    Map<?, ?> p = (Map<?, ?>) msg.getPayload();
+                    String query = p.get("query").toString().trim();
+
+                    if (query.isEmpty()) {
+                        yield gson.toJson(new JsonMessage(
+                                "search_users_response",
+                                Map.of("status", "ok", "users", List.of())
+                        ));
+                    }
+
+                    int currentUserId = sender.getSession().getUserId();
+
+                    List<User> users = userService.searchUsers(query, currentUserId);
+
+                    List<Map<String, Object>> result = users.stream()
+                            .map(u -> Map.<String, Object>of(
+                                    "id", u.getId(),
+                                    "username", u.getUsername(),
+                                    "avatar_url", u.getAvatarUrl() != null ? u.getAvatarUrl() : ""
+                            ))
+                            .toList();
+
+                    yield gson.toJson(new JsonMessage(
+                            "search_users_response",
+                            Map.of(
+                                    "status", "ok",
+                                    "users", result
+                            )
+                    ));
+                }
+
+
 
 
                 default -> gson.toJson(new JsonMessage("error", "Unknown message type"));

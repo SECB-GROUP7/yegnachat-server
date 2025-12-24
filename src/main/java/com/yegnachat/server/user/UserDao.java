@@ -1,7 +1,5 @@
 package com.yegnachat.server.user;
 
-import com.yegnachat.server.user.User;
-
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
@@ -62,19 +60,34 @@ public class UserDao {
         return rs.next() ? extractUser(rs) : null;
     }
 
-    //    public List<User> listAllExcept(int userId) throws SQLException {
-//        String sql = "SELECT * FROM users WHERE id <> ?";
-//        PreparedStatement ps = conn.prepareStatement(sql);
-//        ps.setInt(1, userId);
-//
-//        ResultSet rs = ps.executeQuery();
-//        List<User> users = new ArrayList<>();
-//
-//        while (rs.next()) {
-//            users.add(extractUser(rs));
-//        }
-//        return users;
-//    }
+    public List<User> searchUsers(String query, int excludeUserId) throws SQLException {
+        List<User> users = new ArrayList<>();
+
+        String sql = """
+        SELECT id, username, avatar_url, bio
+        FROM users
+        WHERE LOWER(username) LIKE ?
+          AND id <> ?
+        LIMIT 20
+    """;
+
+        try (PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setString(1, "%" + query.toLowerCase() + "%");
+            ps.setInt(2, excludeUserId);
+
+            ResultSet rs = ps.executeQuery();
+            while (rs.next()) {
+                User u = new User();
+                u.setId(rs.getInt("id"));
+                u.setUsername(rs.getString("username"));
+                u.setAvatarUrl(rs.getString("avatar_url"));
+                u.setBio(rs.getString("bio"));
+                users.add(u);
+            }
+        }
+        return users;
+    }
+
     public List<Map<String, Object>> listGroupsForUser(int userId) throws SQLException {
         List<Map<String, Object>> groups = new ArrayList<>();
 
@@ -128,6 +141,22 @@ public class UserDao {
             }
         }
         return users;
+    }
+    public boolean updatePassword(int userId, String passwordHash) throws SQLException {
+        String sql = "UPDATE users SET password_hash = ? WHERE id = ?";
+        try (PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setString(1, passwordHash);
+            ps.setInt(2, userId);
+            return ps.executeUpdate() == 1;
+        }
+    }
+    public boolean updateBio(int userId, String bio) throws SQLException {
+        String sql = "UPDATE users SET bio = ? WHERE id = ?";
+        try (PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setString(1, bio);
+            ps.setInt(2, userId);
+            return ps.executeUpdate() == 1;
+        }
     }
 
 

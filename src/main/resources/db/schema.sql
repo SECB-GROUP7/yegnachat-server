@@ -7,6 +7,7 @@ CREATE TABLE IF NOT EXISTS users (
     password_hash   VARCHAR(255) NOT NULL,
     avatar_url      VARCHAR(255),
     bio             VARCHAR(200),
+    preferred_language_code VARCHAR(5) NOT NULL DEFAULT 'en',
     created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 

@@ -1,7 +1,5 @@
 package com.yegnachat.server.user;
 
-import com.yegnachat.server.user.UserDao;
-import com.yegnachat.server.user.User;
 import com.yegnachat.server.DatabaseService;
 import com.yegnachat.server.util.PasswordUtil;
 
@@ -19,11 +17,6 @@ public class UserService {
         this.db = db;
     }
 
-    public User getByUsername(String username) throws SQLException {
-        try (Connection conn = db.getConnection()) {
-            return new UserDao(conn).getUserByUsername(username);
-        }
-    }
 
     public User getById(int id) throws SQLException {
         try (Connection conn = db.getConnection()) {
@@ -31,11 +24,6 @@ public class UserService {
         }
     }
 
-//    public List<User> listAllUsersExcept(int userId) throws SQLException {
-//        try (Connection conn = db.getConnection()) {
-//            return new UserDao(conn).listAllExcept(userId);
-//        }
-//    }
 
     public List<User> listUsersWithMessages(int userId) throws SQLException {
         try (Connection conn = db.getConnection()) {
@@ -75,5 +63,36 @@ public class UserService {
             return ps.executeUpdate() > 0;
         }
     }
+    public boolean changePassword(int userId, String oldPassword, String newPassword) throws SQLException {
+        try (Connection conn = db.getConnection()) {
+            UserDao dao = new UserDao(conn);
+            User user = dao.getUserById(userId);
+
+            if (user == null) return false;
+
+            // Verify old password
+            if (!PasswordUtil.checkPassword(oldPassword, user.getPasswordHash())) {
+                return false;
+            }
+
+            String newHash = PasswordUtil.hashPassword(newPassword);
+            return dao.updatePassword(userId, newHash);
+        }
+
+    }
+
+    public boolean updateBio(int userId, String bio) throws SQLException {
+        try (Connection conn = db.getConnection()) {
+            return new UserDao(conn).updateBio(userId, bio);
+        }
+    }
+
+    public List<User> searchUsers(String query, int excludeUserId) throws SQLException {
+        try (Connection conn = db.getConnection()) {
+            return new UserDao(conn).searchUsers(query, excludeUserId);
+        }
+    }
+
+
 
 }
