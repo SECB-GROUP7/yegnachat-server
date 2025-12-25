@@ -31,11 +31,13 @@ public class AuthService {
             if (!PasswordUtil.checkPassword(password, rs.getString("password_hash")))
                 return null;
 
+            // Create session and persist
             return SessionManager.createSession(
                     rs.getInt("id"),
                     rs.getString("preferred_language_code")
             );
         }
     }
+
 
 }

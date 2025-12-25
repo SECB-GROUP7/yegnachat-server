@@ -30,6 +30,7 @@ public class UserService {
             return new UserDao(conn).listUsersWithMessages(userId);
         }
     }
+
     public List<Map<String, Object>> listGroupsForUser(int userId) throws SQLException {
         try (Connection conn = db.getConnection()) {
             return new UserDao(conn).listGroupsForUser(userId);
@@ -54,6 +55,7 @@ public class UserService {
             return dao.createUser(user);
         }
     }
+
     public boolean updatePreferredLanguage(int userId, String languageCode) throws SQLException {
         String sql = "UPDATE users SET preferred_language_code = ? WHERE id = ?";
         try (Connection conn = db.getConnection();
@@ -63,6 +65,7 @@ public class UserService {
             return ps.executeUpdate() > 0;
         }
     }
+
     public boolean changePassword(int userId, String oldPassword, String newPassword) throws SQLException {
         try (Connection conn = db.getConnection()) {
             UserDao dao = new UserDao(conn);
@@ -92,7 +95,6 @@ public class UserService {
             return new UserDao(conn).searchUsers(query, excludeUserId);
         }
     }
-
 
 
 }

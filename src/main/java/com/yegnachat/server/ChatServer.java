@@ -1,6 +1,7 @@
 package com.yegnachat.server;
 
 import com.yegnachat.server.auth.AuthService;
+import com.yegnachat.server.auth.SessionManager;
 import com.yegnachat.server.chat.ChatService;
 import com.yegnachat.server.user.UserService;
 
@@ -21,6 +22,7 @@ public class ChatServer {
         AuthService authService = new AuthService(databaseService);
         ChatService chatService = new ChatService(databaseService);
         UserService userService = new UserService(databaseService);
+        SessionManager.init(databaseService);
 
         this.router = new MessageRouter(authService, chatService, userService);
         this.serverSocket = new ServerSocket(port);

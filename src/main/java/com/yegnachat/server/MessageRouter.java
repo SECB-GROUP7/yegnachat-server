@@ -1,6 +1,7 @@
 package com.yegnachat.server;
 
 import com.google.gson.Gson;
+import com.yegnachat.server.auth.SessionManager;
 import com.yegnachat.server.chat.GroupMessage;
 import com.yegnachat.server.protocol.JsonMessage;
 import com.yegnachat.server.auth.AuthService;
@@ -534,12 +535,52 @@ public class MessageRouter {
                     ));
                 }
                 case "logout" -> {
+                    if (sender.getSession() != null) {
+
+                        try {
+                            // Invalidate the token from database
+                            SessionManager.invalidate(sender.getSession().getToken());
+                        } catch (SQLException e) {
+                            e.printStackTrace();
+                        }
+                    }
+                    // clear session from SessionInfo
                     sender.clearSession();
-                    sender.close(); // terminates the connection
+                    sender.close();
                     yield gson.toJson(new JsonMessage("logout_response", Map.of(
                             "status", "ok"
                     )));
                 }
+
+                case "get_session" -> {
+                    Map<?, ?> p = (Map<?, ?>) msg.getPayload();
+                    String token = p.get("token").toString();
+
+                    SessionInfo s = SessionManager.get(token);
+                    if (s == null) {
+                        yield gson.toJson(new JsonMessage("get_session_response", Map.of(
+                                "status", "error"
+                        )));
+                    }
+
+                    User user = userService.getById(s.getUserId());
+                    if (user == null) {
+                        yield gson.toJson(new JsonMessage("get_session_response", Map.of(
+                                "status", "error"
+                        )));
+                    }
+
+                    sender.setSession(s); // set session in client handler
+                    yield gson.toJson(new JsonMessage("get_session_response", Map.of(
+                            "status", "ok",
+                            "token", s.getToken(),
+                            "user_id", s.getUserId(),
+                            "preferred_language_code", s.getPreferredLanguageCode()
+                    )));
+                }
+
+
+
 
                 default -> gson.toJson(new JsonMessage("error", "Unknown message type"));
             };
