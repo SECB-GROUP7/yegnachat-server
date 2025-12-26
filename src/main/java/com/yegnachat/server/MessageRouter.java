@@ -44,16 +44,16 @@ public class MessageRouter {
 
                     if (s == null) {
                         yield gson.toJson(new JsonMessage("login_response", Map.of("status", "error")));
+                    } else {
+                        sender.setSession(s);
+                        yield gson.toJson(new JsonMessage("login_response", Map.of(
+                                "status", "ok",
+                                "token", s.getToken(),
+                                "user_id", s.getUserId(),
+                                "preferred_language_code", s.getPreferredLanguageCode()
+                        )));
                     }
 
-                    sender.setSession(s);
-
-                    yield gson.toJson(new JsonMessage("login_response", Map.of(
-                            "status", "ok",
-                            "token", s.getToken(),
-                            "user_id", s.getUserId(),
-                            "preferred_language_code", s.getPreferredLanguageCode()
-                    )));
                 }
 
 
@@ -66,10 +66,31 @@ public class MessageRouter {
                     String content = p.get("content").toString();
 
                     if (p.containsKey("receiver_id")) {
+                        int senderId = sender.getSession().getUserId();
                         int receiverId = Integer.parseInt(p.get("receiver_id").toString());
-                        chatService.savePrivateMessage(sender.getSession().getUserId(), receiverId, content);
-                        ClientHandler.sendToUser(receiverId, json);
+
+                        chatService.savePrivateMessage(senderId, receiverId, content);
+
+                        User senderUser = userService.getById(senderId);
+
+                        Map<String, Object> enrichedPayload = Map.of(
+                                "chat_type", "private",
+                                "sender_id", senderId,
+                                "sender_username", senderUser.getUsername(),
+                                "avatar_url", senderUser.getAvatarUrl() != null ? senderUser.getAvatarUrl() : "",
+                                "receiver_id", receiverId,
+                                "content", content
+                        );
+
+                        String outgoing = gson.toJson(new JsonMessage("send_message", enrichedPayload));
+
+                        // Send to receiver
+                        ClientHandler.sendToUser(receiverId, outgoing);
+
+                        // Optional: echo back to sender (recommended for UI consistency)
+                        ClientHandler.sendToUser(senderId, outgoing);
                     }
+
 
                     if (p.containsKey("group_id")) {
                         int groupId = Integer.parseInt(p.get("group_id").toString());
@@ -85,8 +106,24 @@ public class MessageRouter {
                         chatService.saveGroupMessage(senderId, groupId, content);
 
                         List<Integer> members = chatService.getGroupMembers(groupId);
-                        ClientHandler.sendToUsers(members, json, senderId);
+                        User senderUser = userService.getById(senderId);
+
+                        Map<String, Object> enrichedPayload = Map.of(
+                                "chat_type", "group",
+                                "sender_id", senderId,
+                                "sender_username", senderUser.getUsername(),
+                                "avatar_url", senderUser.getAvatarUrl() != null ? senderUser.getAvatarUrl() : "",
+                                "group_id", groupId,
+                                "content", content
+                        );
+
+                        String outgoing = gson.toJson(new JsonMessage("send_message", enrichedPayload));
+
+                        for (int memberId : members) {
+                            ClientHandler.sendToUser(memberId, outgoing);
+                        }
                     }
+
 
                     yield null;
                 }
@@ -100,7 +137,9 @@ public class MessageRouter {
                     String type = p.get("chat_type").toString(); // "private" or "group"
 
                     if ("private".equals(type)) {
-                        int otherUserId = Integer.parseInt(p.get("user_id").toString());
+                        // Convert user_id to integer safely
+                        int otherUserId = ((Number) p.get("user_id")).intValue();
+
                         List<Map<String, Object>> history =
                                 chatService.fetchPrivateHistory(
                                         sender.getSession().getUserId(),
@@ -114,7 +153,8 @@ public class MessageRouter {
                                 "messages", history
                         )));
                     } else if ("group".equals(type)) {
-                        int groupId = Integer.parseInt(p.get("group_id").toString());
+                        // Convert group_id to integer safely
+                        int groupId = ((Number) p.get("group_id")).intValue();
 
                         List<GroupMessage> messages = chatService.fetchGroupHistory(groupId);
                         List<Map<String, Object>> history = new ArrayList<>();
@@ -124,7 +164,7 @@ public class MessageRouter {
                             String senderName = senderUser != null ? senderUser.getUsername() : "Unknown";
 
                             Map<String, Object> msgMap = new LinkedHashMap<>();
-                            msgMap.put("sender_id", gm.senderId());
+                            msgMap.put("sender_id", gm.senderId());              // integer
                             msgMap.put("sender_username", senderName);
                             msgMap.put("avatar_url", senderUser != null ? senderUser.getAvatarUrl() : "");
                             msgMap.put("content", gm.content());
@@ -132,17 +172,16 @@ public class MessageRouter {
                             history.add(msgMap);
                         }
 
-
                         yield gson.toJson(new JsonMessage("fetch_history_response", Map.of(
                                 "status", "ok",
                                 "chat_type", "group",
                                 "messages", history
                         )));
                     } else {
-                        // handle unknown chat_type
                         yield gson.toJson(new JsonMessage("error", "Unknown chat type: " + type));
                     }
                 }
+
 
 
                 case "get_user" -> {
@@ -203,6 +242,7 @@ public class MessageRouter {
                                 "groups", groupList
                         )));
                     } catch (Exception e) {
+                        e.printStackTrace();
                         yield gson.toJson(new JsonMessage("error", "Exception: " + e.getMessage()));
                     }
                 }
@@ -224,6 +264,7 @@ public class MessageRouter {
                             yield gson.toJson(new JsonMessage("signup_response", Map.of("status", "error", "message", "Username already exists")));
                         }
                     } catch (Exception e) {
+                        e.printStackTrace();
                         yield gson.toJson(new JsonMessage("signup_response", Map.of("status", "error", "message", e.getMessage())));
                     }
                 }
@@ -278,6 +319,7 @@ public class MessageRouter {
                                 "group_id", groupId
                         )));
                     } catch (Exception e) {
+                        e.printStackTrace();
                         yield gson.toJson(new JsonMessage("create_group_response", Map.of(
                                 "status", "error",
                                 "message", e.getMessage()
@@ -347,6 +389,7 @@ public class MessageRouter {
                         ));
 
                     } catch (SQLException e) {
+                        e.printStackTrace();
                         yield gson.toJson(new JsonMessage(
                                 "add_user_to_group_response",
                                 Map.of(
@@ -432,6 +475,7 @@ public class MessageRouter {
                             )));
                         }
                     } catch (SQLException e) {
+                        e.printStackTrace();
                         yield gson.toJson(new JsonMessage("set_preferred_language_response", Map.of(
                                 "status", "error",
                                 "message", "Database error: " + e.getMessage()
