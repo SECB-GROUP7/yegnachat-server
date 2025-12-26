@@ -328,4 +328,26 @@ public class ChatService {
         return admins;
     }
 
+    public Map<String, Object> getGroupInfo(int groupId) throws SQLException {
+        String sql = "SELECT id, name, about, avatar_url, created_by FROM chat_groups WHERE id = ?";
+        try (Connection conn = db.getConnection();
+             PreparedStatement ps = conn.prepareStatement(sql)) {
+
+            ps.setInt(1, groupId);
+            ResultSet rs = ps.executeQuery();
+
+            if (!rs.next()) return null; // group not found
+
+            return Map.of(
+                    "id", rs.getInt("id"),
+                    "name", rs.getString("name"),
+                    "about", rs.getString("about"),
+                    "avatar_url", rs.getString("avatar_url"),
+                    "created_by", rs.getInt("created_by")
+            );
+        }
+    }
+
+
+
 }

@@ -432,6 +432,80 @@ public class MessageRouter {
                         ));
                     }
                 }
+                case "add_group_member" -> {
+                    if (sender.getSession() == null) {
+                        yield gson.toJson(new JsonMessage(
+                                "error",
+                                "Not authenticated"
+                        ));
+                    }
+
+                    Map<String, Object> p = (Map<String, Object>) msg.getPayload();
+                    int groupId = Integer.parseInt(p.get("group_id").toString());
+                    String username = p.get("username").toString();
+                    int senderId = sender.getSession().getUserId();
+
+                    try {
+                        // Check if sender is in the group
+                        if (!chatService.isUserInGroup(groupId, senderId)) {
+                            yield gson.toJson(new JsonMessage(
+                                    "add_group_member_response",
+                                    Map.of(
+                                            "status", "error",
+                                            "message", "You are not a member of this group"
+                                    )
+                            ));
+                        }
+
+                        // Lookup user by username
+                        User user = userService.getByUsername(username);
+                        if (user == null) {
+                            yield gson.toJson(new JsonMessage(
+                                    "add_group_member_response",
+                                    Map.of(
+                                            "status", "error",
+                                            "message", "User not found"
+                                    )
+                            ));
+                        }
+
+                        int userId = user.getId();
+
+                        // Check if user is already in group
+                        if (chatService.isUserInGroup(groupId, userId)) {
+                            yield gson.toJson(new JsonMessage(
+                                    "add_group_member_response",
+                                    Map.of(
+                                            "status", "error",
+                                            "message", "User is already in the group"
+                                    )
+                            ));
+                        }
+
+                        // Add user to group as "member"
+                        chatService.addUserToGroup(groupId, userId, "member");
+
+                        yield gson.toJson(new JsonMessage(
+                                "add_group_member_response",
+                                Map.of(
+                                        "status", "ok",
+                                        "group_id", groupId,
+                                        "added_username", username
+                                )
+                        ));
+
+                    } catch (SQLException e) {
+                        e.printStackTrace();
+                        yield gson.toJson(new JsonMessage(
+                                "add_group_member_response",
+                                Map.of(
+                                        "status", "error",
+                                        "message", "Database error: " + e.getMessage()
+                                )
+                        ));
+                    }
+                }
+
                 case "leave_group" -> {
 
                     if (sender.getSession() == null) {
@@ -851,9 +925,40 @@ public class MessageRouter {
                             "comments", comments
                     )));
                 }
+                case "get_group_info" -> {
+                    if (sender.getSession() == null) {
+                        yield gson.toJson(new JsonMessage("error", "Not authenticated"));
+                    }
+
+                    Map<?, ?> p = (Map<?, ?>) msg.getPayload();
+                    int groupId = Integer.parseInt(p.get("group_id").toString());
+
+                    try {
+                        Map<String, Object> groupData = chatService.getGroupInfo(groupId);
+
+                        if (groupData == null) {
+                            yield gson.toJson(new JsonMessage("get_group_info_response", Map.of(
+                                    "status", "error",
+                                    "message", "Group not found"
+                            )));
+                        } else {
+                            yield gson.toJson(new JsonMessage("get_group_info_response", Map.of(
+                                    "status", "ok",
+                                    "group", groupData
+                            )));
+                        }
+                    } catch (SQLException e) {
+                        yield gson.toJson(new JsonMessage("get_group_info_response", Map.of(
+                                "status", "error",
+                                "message", "Database error: " + e.getMessage()
+                        )));
+                    }
+                }
+
 
                 default -> gson.toJson(new JsonMessage("error", "Unknown message type"));
             };
+
 
         } catch (SQLException e) {
             return gson.toJson(new JsonMessage("error", "Database error: " + e.getMessage()));
