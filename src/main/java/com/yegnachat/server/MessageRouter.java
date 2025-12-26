@@ -3,6 +3,7 @@ package com.yegnachat.server;
 import com.google.gson.Gson;
 import com.yegnachat.server.auth.SessionManager;
 import com.yegnachat.server.chat.GroupMessage;
+import com.yegnachat.server.feed.FeedService;
 import com.yegnachat.server.protocol.JsonMessage;
 import com.yegnachat.server.auth.AuthService;
 import com.yegnachat.server.auth.SessionInfo;
@@ -22,11 +23,14 @@ public class MessageRouter {
     private final AuthService authService;
     private final ChatService chatService;
     private final UserService userService;
+    private final FeedService feedService;
 
-    public MessageRouter(AuthService authService, ChatService chatService, UserService userService) {
+
+    public MessageRouter(AuthService authService, ChatService chatService, UserService userService,FeedService feedService) {
         this.authService = authService;
         this.chatService = chatService;
         this.userService = userService;
+        this.feedService = feedService;
     }
 
     public String route(String json, ClientHandler sender) {
@@ -182,14 +186,13 @@ public class MessageRouter {
                     }
                 }
 
-
-
+                // to get yourself
                 case "get_user" -> {
                     if (sender.getSession() == null) {
                         yield gson.toJson(new JsonMessage("error", "Not authenticated"));
                     }
 
-                    int userId = sender.getSession().getUserId(); // ✅ SESSION ONLY
+                    int userId = sender.getSession().getUserId();
                     User user = userService.getById(userId);
 
                     if (user == null) {
@@ -201,6 +204,36 @@ public class MessageRouter {
 
                     yield gson.toJson(new JsonMessage(
                             "get_user_response",
+                            Map.of(
+                                    "status", "ok",
+                                    "user", Map.of(
+                                            "id", user.getId(),
+                                            "username", user.getUsername(),
+                                            "avatar_url", user.getAvatarUrl() != null ? user.getAvatarUrl() : "",
+                                            "bio", user.getBio() != null ? user.getBio() : ""
+                                    )
+                            )
+                    ));
+                }
+                // to get other people using ID
+                case "get_user_profile" -> {
+                    if (sender.getSession() == null) {
+                        yield gson.toJson(new JsonMessage("error", "Not authenticated"));
+                    }
+
+                    Map<?, ?> p = (Map<?, ?>) msg.getPayload();
+                    int targetUserId = Integer.parseInt(p.get("user_id").toString());
+
+                    User user = userService.getById(targetUserId);
+                    if (user == null) {
+                        yield gson.toJson(new JsonMessage(
+                                "get_user_profile_response",
+                                Map.of("status", "error", "message", "User not found")
+                        ));
+                    }
+
+                    yield gson.toJson(new JsonMessage(
+                            "get_user_profile_response",
                             Map.of(
                                     "status", "ok",
                                     "user", Map.of(
@@ -622,9 +655,202 @@ public class MessageRouter {
                             "preferred_language_code", s.getPreferredLanguageCode()
                     )));
                 }
+                case "remove_user_from_group" -> {
+                    if (sender.getSession() == null) {
+                        yield gson.toJson(new JsonMessage("error", "Not authenticated"));
+                    }
 
+                    Map<?, ?> p = (Map<?, ?>) msg.getPayload();
+                    int groupId = Integer.parseInt(p.get("group_id").toString());
+                    int targetUserId = Integer.parseInt(p.get("user_id").toString());
+                    int senderId = sender.getSession().getUserId();
 
+                    if (!chatService.isAdminInGroup(groupId, senderId)) {
+                        yield gson.toJson(new JsonMessage("remove_user_from_group_response", Map.of(
+                                "status", "error",
+                                "message", "You are not an admin of this group"
+                        )));
+                    }
 
+                    boolean removed = chatService.removeUserFromGroup(groupId, targetUserId);
+
+                    yield gson.toJson(new JsonMessage("remove_user_from_group_response", Map.of(
+                            "status", removed ? "ok" : "error",
+                            "removed_user_id", targetUserId
+                    )));
+                }
+                case "promote_demote_user" -> {
+                    if (sender.getSession() == null) {
+                        yield gson.toJson(new JsonMessage("error", "Not authenticated"));
+                    }
+
+                    Map<?, ?> p = (Map<?, ?>) msg.getPayload();
+                    int groupId = Integer.parseInt(p.get("group_id").toString());
+                    int targetUserId = Integer.parseInt(p.get("user_id").toString());
+                    String newRole = p.get("new_role").toString().toLowerCase();
+                    int senderId = sender.getSession().getUserId();
+
+                    if (!chatService.isOwnerInGroup(groupId, senderId)) {
+                        yield gson.toJson(new JsonMessage("promote_demote_user_response", Map.of(
+                                "status", "error",
+                                "message", "Only the owner can change roles"
+                        )));
+                    }
+
+                    boolean updated = chatService.updateUserRole(groupId, targetUserId, newRole);
+
+                    yield gson.toJson(new JsonMessage("promote_demote_user_response", Map.of(
+                            "status", updated ? "ok" : "error",
+                            "user_id", targetUserId,
+                            "new_role", newRole
+                    )));
+                }
+                case "update_group_info" -> {
+                    if (sender.getSession() == null) {
+                        yield gson.toJson(new JsonMessage("error", "Not authenticated"));
+                    }
+
+                    Map<?, ?> p = (Map<?, ?>) msg.getPayload();
+                    int groupId = Integer.parseInt(p.get("group_id").toString());
+                    String name = p.get("name").toString();
+                    String about = p.get("about").toString();
+                    String avatarUrl = p.get("avatar_url").toString();
+                    int senderId = sender.getSession().getUserId();
+
+                    if (!chatService.isAdminInGroup(groupId, senderId)) {
+                        yield gson.toJson(new JsonMessage("update_group_info_response", Map.of(
+                                "status", "error",
+                                "message", "Only admins can update group info"
+                        )));
+                    }
+
+                    boolean updated = chatService.updateGroupInfo(groupId, name, about, avatarUrl);
+
+                    yield gson.toJson(new JsonMessage("update_group_info_response", Map.of(
+                            "status", updated ? "ok" : "error",
+                            "group_id", groupId
+                    )));
+                }
+                case "list_group_admins" -> {
+                    if (sender.getSession() == null) {
+                        yield gson.toJson(new JsonMessage("error", "Not authenticated"));
+                    }
+
+                    int groupId = ((Number)((Map<?, ?>) msg.getPayload()).get("group_id")).intValue();
+
+                    List<Map<String, Object>> admins = chatService.listGroupAdmins(groupId);
+
+                    yield gson.toJson(new JsonMessage("list_group_admins_response", Map.of(
+                            "status", "ok",
+                            "group_id", groupId,
+                            "admins", admins
+                    )));
+                }
+                // FEED BASED
+                case "follow_user" -> {
+                    if (sender.getSession() == null) {
+                        yield gson.toJson(new JsonMessage("error", "Not authenticated"));
+                    }
+                    Map<?, ?> p = (Map<?, ?>) msg.getPayload();
+                    int targetId = ((Number) p.get("user_id")).intValue();
+                    boolean ok = userService.followUser(sender.getSession().getUserId(), targetId);
+
+                    yield gson.toJson(new JsonMessage("follow_user_response", Map.of(
+                            "status", ok ? "ok" : "error",
+                            "user_id", targetId
+                    )));
+                }
+
+                case "unfollow_user" -> {
+                    if (sender.getSession() == null) {
+                        yield gson.toJson(new JsonMessage("error", "Not authenticated"));
+                    }
+                    Map<?, ?> p = (Map<?, ?>) msg.getPayload();
+                    int targetId = ((Number) p.get("user_id")).intValue();
+                    boolean ok = userService.unfollowUser(sender.getSession().getUserId(), targetId);
+
+                    yield gson.toJson(new JsonMessage("unfollow_user_response", Map.of(
+                            "status", ok ? "ok" : "error",
+                            "user_id", targetId
+                    )));
+                }
+                case "create_post" -> {
+                    int userId = sender.getSession().getUserId();
+                    Map<?, ?> p = (Map<?, ?>) msg.getPayload();
+
+                    String content = p.get("content").toString();
+                    String imageUrl = p.get("image_url").toString();
+
+                    long postId = feedService.createPost(userId, content, imageUrl);
+
+                    yield gson.toJson(new JsonMessage("create_post_response", Map.of(
+                            "status", "ok",
+                            "post_id", postId
+                    )));
+                }
+                case "list_feed_posts" -> {
+                    Map<?, ?> p = (Map<?, ?>) msg.getPayload();
+
+                    int limit = Integer.parseInt(p.get("limit").toString());
+                    int offset = Integer.parseInt(p.get("offset").toString());
+
+                    var posts = feedService.listFeedPosts(limit, offset);
+
+                    yield gson.toJson(new JsonMessage("list_feed_posts_response", Map.of(
+                            "status", "ok",
+                            "posts", posts
+                    )));
+                }
+                case "like_post" -> {
+                    int userId = sender.getSession().getUserId();
+                    long postId = ((Number)((Map<?, ?>) msg.getPayload()).get("post_id")).longValue();
+
+                    feedService.likePost(userId, postId);
+
+                    yield gson.toJson(new JsonMessage("like_post_response", Map.of(
+                            "status", "ok",
+                            "post_id", postId
+                    )));
+                }
+
+                case "unlike_post" -> {
+                    int userId = sender.getSession().getUserId();
+                    long postId = ((Number)((Map<?, ?>) msg.getPayload()).get("post_id")).longValue();
+
+                    feedService.unlikePost(userId, postId);
+
+                    yield gson.toJson(new JsonMessage("unlike_post_response", Map.of(
+                            "status", "ok",
+                            "post_id", postId
+                    )));
+                }
+                case "add_comment" -> {
+                    int userId = sender.getSession().getUserId();
+                    Map<?, ?> p = (Map<?, ?>) msg.getPayload();
+
+                    long postId = ((Number)p.get("post_id")).longValue();
+                    String content = p.get("content").toString();
+
+                    long commentId = feedService.addComment(userId, postId, content);
+
+                    yield gson.toJson(new JsonMessage("add_comment_response", Map.of(
+                            "status", "ok",
+                            "comment_id", commentId,
+                            "post_id", postId
+                    )));
+                }
+
+                case "list_comments" -> {
+                    long postId = ((Number)((Map<?, ?>) msg.getPayload()).get("post_id")).longValue();
+
+                    var comments = feedService.listComments(postId);
+
+                    yield gson.toJson(new JsonMessage("list_comments_response", Map.of(
+                            "status", "ok",
+                            "post_id", postId,
+                            "comments", comments
+                    )));
+                }
 
                 default -> gson.toJson(new JsonMessage("error", "Unknown message type"));
             };

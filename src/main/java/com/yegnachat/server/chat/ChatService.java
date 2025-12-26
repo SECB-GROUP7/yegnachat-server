@@ -253,5 +253,79 @@ public class ChatService {
             return ps.executeUpdate() > 0;
         }
     }
+    public boolean isAdminInGroup(int groupId, int userId) throws SQLException {
+        String sql = "SELECT role FROM group_members WHERE group_id = ? AND user_id = ?";
+        try (Connection conn = db.getConnection();
+             PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setInt(1, groupId);
+            ps.setInt(2, userId);
+            ResultSet rs = ps.executeQuery();
+            return rs.next() && (rs.getString("role").equalsIgnoreCase("admin")
+                    || rs.getString("role").equalsIgnoreCase("owner"));
+        }
+    }
+
+    public boolean removeUserFromGroup(int groupId, int userId) throws SQLException {
+        String sql = "DELETE FROM group_members WHERE group_id = ? AND user_id = ?";
+        try (Connection conn = db.getConnection();
+             PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setInt(1, groupId);
+            ps.setInt(2, userId);
+            return ps.executeUpdate() > 0;
+        }
+    }
+    public boolean isOwnerInGroup(int groupId, int userId) throws SQLException {
+        String sql = "SELECT role FROM group_members WHERE group_id = ? AND user_id = ?";
+        try (Connection conn = db.getConnection();
+             PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setInt(1, groupId);
+            ps.setInt(2, userId);
+            ResultSet rs = ps.executeQuery();
+            return rs.next() && rs.getString("role").equalsIgnoreCase("owner");
+        }
+    }
+
+    public boolean updateUserRole(int groupId, int userId, String newRole) throws SQLException {
+        String sql = "UPDATE group_members SET role = ? WHERE group_id = ? AND user_id = ?";
+        try (Connection conn = db.getConnection();
+             PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setString(1, newRole);
+            ps.setInt(2, groupId);
+            ps.setInt(3, userId);
+            return ps.executeUpdate() > 0;
+        }
+    }
+    public boolean updateGroupInfo(int groupId, String name, String about, String avatarUrl) throws SQLException {
+        String sql = "UPDATE chat_groups SET name = ?, about = ?, avatar_url = ? WHERE id = ?";
+        try (Connection conn = db.getConnection();
+             PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setString(1, name);
+            ps.setString(2, about);
+            ps.setString(3, avatarUrl);
+            ps.setInt(4, groupId);
+            return ps.executeUpdate() > 0;
+        }
+    }
+    public List<Map<String, Object>> listGroupAdmins(int groupId) throws SQLException {
+        String sql = "SELECT u.id, u.username, u.avatar_url, gm.role " +
+                "FROM users u " +
+                "JOIN group_members gm ON u.id = gm.user_id " +
+                "WHERE gm.group_id = ? AND (gm.role='admin' OR gm.role='owner')";
+        List<Map<String, Object>> admins = new ArrayList<>();
+        try (Connection conn = db.getConnection();
+             PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setInt(1, groupId);
+            ResultSet rs = ps.executeQuery();
+            while (rs.next()) {
+                admins.add(Map.of(
+                        "id", rs.getInt("id"),
+                        "username", rs.getString("username"),
+                        "avatar_url", rs.getString("avatar_url"),
+                        "role", rs.getString("role")
+                ));
+            }
+        }
+        return admins;
+    }
 
 }

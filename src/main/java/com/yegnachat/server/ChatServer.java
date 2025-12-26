@@ -3,6 +3,7 @@ package com.yegnachat.server;
 import com.yegnachat.server.auth.AuthService;
 import com.yegnachat.server.auth.SessionManager;
 import com.yegnachat.server.chat.ChatService;
+import com.yegnachat.server.feed.FeedService;
 import com.yegnachat.server.user.UserService;
 
 import java.io.IOException;
@@ -22,9 +23,10 @@ public class ChatServer {
         AuthService authService = new AuthService(databaseService);
         ChatService chatService = new ChatService(databaseService);
         UserService userService = new UserService(databaseService);
+        FeedService feedService = new FeedService(databaseService);
         SessionManager.init(databaseService);
 
-        this.router = new MessageRouter(authService, chatService, userService);
+        this.router = new MessageRouter(authService, chatService, userService,feedService);
         this.serverSocket = new ServerSocket(port);
 
         System.out.println("Server started on port " + port);
