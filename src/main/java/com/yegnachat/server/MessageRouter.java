@@ -266,7 +266,7 @@ public class MessageRouter {
                                 ))
                                 .toList();
 
-                        // 2️⃣ Groups the user belongs to
+                        // Groups the user belongs to
                         List<Map<String, Object>> groupList = userService.listGroupsForUser(currentUserId);
 
                         yield gson.toJson(new JsonMessage("list_users_response", Map.of(
@@ -302,6 +302,7 @@ public class MessageRouter {
                     }
                 }
                 case "list_group_members" -> {
+
                     if (sender.getSession() == null) {
                         yield gson.toJson(new JsonMessage("error", "Not authenticated"));
                     }
@@ -309,14 +310,18 @@ public class MessageRouter {
                     Map<?, ?> p = (Map<?, ?>) msg.getPayload();
                     int groupId = Integer.parseInt(p.get("group_id").toString());
 
-                    List<Integer> memberIds = chatService.getGroupMembers(groupId);
+                    List<Map<String, Object>> members = chatService.getGroupMembersDetailed(groupId);
 
-                    yield gson.toJson(new JsonMessage("list_group_members_response", Map.of(
-                            "status", "ok",
-                            "group_id", groupId,
-                            "members", memberIds
-                    )));
+                    yield gson.toJson(new JsonMessage(
+                            "list_group_members_response",
+                            Map.of(
+                                    "status", "ok",
+                                    "group_id", groupId,
+                                    "members", members
+                            )
+                    ));
                 }
+
                 case "create_group" -> {
                     if (sender.getSession() == null) {
                         yield gson.toJson(new JsonMessage("error", "Not authenticated"));

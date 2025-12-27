@@ -347,6 +347,33 @@ public class ChatService {
             );
         }
     }
+    public List<Map<String, Object>> getGroupMembersDetailed(int groupId) throws SQLException {
+        String sql = """
+        SELECT u.id, u.username, u.avatar_url, gm.role
+        FROM group_members gm
+        JOIN users u ON gm.user_id = u.id
+        WHERE gm.group_id = ?
+    """;
+
+        List<Map<String, Object>> result = new ArrayList<>();
+        Connection conn = db.getConnection();
+        try (PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setInt(1, groupId);
+            ResultSet rs = ps.executeQuery();
+
+            while (rs.next()) {
+                Map<String, Object> m = new LinkedHashMap<>();
+                m.put("id", rs.getInt("id"));
+                m.put("username", rs.getString("username"));
+                m.put("avatar_url", rs.getString("avatar_url"));
+                m.put("role", rs.getString("role"));
+                result.add(m);
+            }
+        }
+
+        return result;
+    }
+
 
 
 
