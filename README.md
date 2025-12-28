@@ -52,6 +52,8 @@ DB_PORT=3306
 DB_USER=root
 DB_PASS=root
 DB_NAME=yegnachat
+DB_IMAGE_LOCATION=./uploads
+UPLOAD_URL=http://localhost:8080/uploads
 ```
 
 These variables will configure the server to connect to your MySQL database.
