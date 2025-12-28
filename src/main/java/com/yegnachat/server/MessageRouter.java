@@ -4,6 +4,7 @@ import com.google.gson.Gson;
 import com.yegnachat.server.auth.SessionManager;
 import com.yegnachat.server.chat.GroupMessage;
 import com.yegnachat.server.feed.FeedService;
+import com.yegnachat.server.image.ImageUploadService;
 import com.yegnachat.server.protocol.JsonMessage;
 import com.yegnachat.server.auth.AuthService;
 import com.yegnachat.server.auth.SessionInfo;
@@ -11,11 +12,9 @@ import com.yegnachat.server.chat.ChatService;
 import com.yegnachat.server.user.UserService;
 import com.yegnachat.server.user.User;
 
+import java.io.InputStream;
 import java.sql.SQLException;
-import java.util.ArrayList;
-import java.util.LinkedHashMap;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 
 public class MessageRouter {
 
@@ -857,21 +856,64 @@ public class MessageRouter {
                     int userId = sender.getSession().getUserId();
                     Map<?, ?> p = (Map<?, ?>) msg.getPayload();
 
-                    String content = p.get("content").toString();
-                    String imageUrl = p.get("image_url").toString();
+                    String content = Objects.toString(p.get("content"), "").trim();
+                    boolean hasImage = Boolean.TRUE.equals(p.get("has_image"));
 
-                    long postId = feedService.createPost(userId, content, imageUrl);
+                    if (content.isEmpty() && !hasImage) {
+                        yield gson.toJson(new JsonMessage("create_post_response", Map.of(
+                                "status", "error",
+                                "message", "Post cannot be empty"
+                        )));
+                    }
+
+                    // Create post WITHOUT image
+                    long postId = feedService.createPost(userId, content, null);
+
+                    // Receive binary image (if present)
+                    if (hasImage) {
+                        long imageSize = ((Number) p.get("image_size")).longValue();
+                        String mime = Objects.toString(p.get("mime"), "image/png");
+
+                        if (!mime.startsWith("image/")) {
+                            yield gson.toJson(new JsonMessage("create_post_response", Map.of(
+                                    "status", "error",
+                                    "message", "Invalid image type"
+                            )));
+                        }
+
+                        if (imageSize <= 0 || imageSize > 10_000_000) { // 10MB cap
+                            yield gson.toJson(new JsonMessage("create_post_response", Map.of(
+                                    "status", "error",
+                                    "message", "Invalid image size"
+                            )));
+                        }
+
+                        try(InputStream imageStream = sender.readBinary(imageSize)){
+
+                        String imageUrl = ImageUploadService.uploadPostImage(
+                                postId,
+                                imageStream,
+                                mime
+                        );
+                            feedService.attachPostImage(postId, imageUrl);
+                        }
+
+
+                    }
 
                     yield gson.toJson(new JsonMessage("create_post_response", Map.of(
                             "status", "ok",
                             "post_id", postId
                     )));
                 }
+
+
+
                 case "list_feed_posts" -> {
                     Map<?, ?> p = (Map<?, ?>) msg.getPayload();
 
-                    int limit = Integer.parseInt(p.get("limit").toString());
-                    int offset = Integer.parseInt(p.get("offset").toString());
+                    int limit = parseIntSafe(p.get("limit"), 20);  // default 20
+                    int offset = parseIntSafe(p.get("offset"), 0); // default 0
 
                     var posts = feedService.listFeedPosts(limit, offset);
 
@@ -961,6 +1003,7 @@ public class MessageRouter {
                 }
 
 
+
                 default -> gson.toJson(new JsonMessage("error", "Unknown message type"));
             };
 
@@ -971,4 +1014,35 @@ public class MessageRouter {
             return gson.toJson(new JsonMessage("error", "Exception:" + e.getMessage()));
         }
     }
+    public void onImageUploadComplete(
+            ClientHandler sender,
+            String imagePath,
+            String purpose
+    ){
+
+       try{ if (sender.getSession() == null) return;
+
+        int userId = sender.getSession().getUserId();
+
+        if ("avatar".equals(purpose)) {
+            userService.updateAvatar(userId, imagePath);
+        }
+
+        sender.send(gson.toJson(new JsonMessage(
+                "upload_complete",
+                Map.of("image_url", imagePath)
+        )));}catch (SQLException e){
+           e.printStackTrace();
+       }
+    }
+    private static int parseIntSafe(Object value, int defaultValue) {
+        if (value == null) return defaultValue;
+        if (value instanceof Number) return ((Number) value).intValue();
+        try {
+            return (int) Double.parseDouble(value.toString());
+        } catch (NumberFormatException e) {
+            return defaultValue;
+        }
+    }
+
 }

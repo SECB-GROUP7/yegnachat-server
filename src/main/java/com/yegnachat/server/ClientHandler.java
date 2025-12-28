@@ -1,10 +1,10 @@
 package com.yegnachat.server;
 
 import com.yegnachat.server.auth.SessionInfo;
+import com.yegnachat.server.util.LimitedInputStream;
 
 import java.io.*;
 import java.net.Socket;
-import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -13,7 +13,9 @@ public class ClientHandler implements Runnable {
     private final Socket socket;
     private final BufferedReader reader;
     private final BufferedWriter writer;
+    private final InputStream rawIn;
     private final MessageRouter router;
+
 
     private SessionInfo session;
 
@@ -24,6 +26,7 @@ public class ClientHandler implements Runnable {
         this.router = router;
         this.reader = new BufferedReader(new InputStreamReader(socket.getInputStream()));
         this.writer = new BufferedWriter(new OutputStreamWriter(socket.getOutputStream()));
+        this.rawIn = socket.getInputStream();
     }
 
     public synchronized void setSession(SessionInfo newSession) {
@@ -47,7 +50,6 @@ public class ClientHandler implements Runnable {
         }
     }
 
-
     public SessionInfo getSession() {
         return session;
     }
@@ -55,20 +57,23 @@ public class ClientHandler implements Runnable {
     @Override
     public void run() {
         try {
-            String json;
-            while ((json = reader.readLine()) != null) {
+            while (true) {
+                String json = reader.readLine();
+                if (json == null) break;
+
                 String response = router.route(json, this);
                 if (response != null) {
                     send(response);
                 }
             }
+
         } catch (IOException ignored) {
         } finally {
             close();
         }
     }
 
-    private void send(String json) {
+    protected void send(String json) {
         try {
             writer.write(json);
             writer.newLine();
@@ -88,19 +93,8 @@ public class ClientHandler implements Runnable {
         return false;
     }
 
-    // For online users only
-    public static void sendToUsers(List<Integer> userIds, String json, int senderId) {
-        for (int id : userIds) {
-            if (id != senderId) {
-                sendToUser(id, json);
-            }
-        }
-    }
-
-    public static void broadcastRaw(String json) {
-        for (ClientHandler client : ONLINE_USERS.values()) {
-            client.send(json);
-        }
+    public InputStream readBinary(long size) throws IOException {
+        return new LimitedInputStream(rawIn, size);
     }
 
     public void close() {

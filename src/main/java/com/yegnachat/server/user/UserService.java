@@ -245,4 +245,14 @@ public class UserService {
             return ps.executeUpdate() > 0;
         }
     }
+    public boolean updateAvatar(int userId, String avatarUrl) throws SQLException {
+        String sql = "UPDATE users SET avatar_url = ? WHERE id = ?";
+        try (Connection conn = db.getConnection();
+             PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setString(1, avatarUrl);
+            ps.setInt(2, userId);
+            return ps.executeUpdate() == 1;
+        }
+    }
+
 }

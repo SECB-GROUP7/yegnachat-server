@@ -4,6 +4,7 @@ import com.yegnachat.server.auth.AuthService;
 import com.yegnachat.server.auth.SessionManager;
 import com.yegnachat.server.chat.ChatService;
 import com.yegnachat.server.feed.FeedService;
+import com.yegnachat.server.image.ImageUploadService;
 import com.yegnachat.server.user.UserService;
 
 import java.io.IOException;
@@ -25,6 +26,7 @@ public class ChatServer {
         UserService userService = new UserService(databaseService);
         FeedService feedService = new FeedService(databaseService);
         SessionManager.init(databaseService);
+        ImageUploadService.setDb(databaseService);
 
         this.router = new MessageRouter(authService, chatService, userService,feedService);
         this.serverSocket = new ServerSocket(port);

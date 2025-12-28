@@ -58,12 +58,12 @@ public class FeedService {
                 posts.add(Map.of(
                         "post_id", rs.getLong("id"),
                         "content", rs.getString("content"),
-                        "image_url", rs.getString("image_url"),
+                        "image_url",   Optional.ofNullable(rs.getString("image_url")).orElse(""),
                         "created_at", rs.getTimestamp("created_at").toString(),
                         "user", Map.of(
                                 "id", rs.getInt("user_id"),
                                 "username", rs.getString("username"),
-                                "avatar_url", rs.getString("avatar_url")
+                                "avatar_url", Optional.ofNullable(rs.getString("avatar_url")).orElse("")
                         ),
                         "likes", rs.getInt("like_count"),
                         "comments", rs.getInt("comment_count")
@@ -154,4 +154,15 @@ public class FeedService {
         }
         return comments;
     }
+    public void attachPostImage(long postId, String imageUrl) throws SQLException {
+        String sql = "UPDATE posts SET image_url=? WHERE id=?";
+        try (Connection c = db.getConnection();
+             PreparedStatement ps = c.prepareStatement(sql)) {
+            ps.setString(1, imageUrl);
+            ps.setLong(2, postId);
+            ps.executeUpdate();
+        }
+    }
+
+
 }
